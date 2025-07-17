@@ -23,7 +23,8 @@ def initialize_state():
 TEXTS = {
     "ko": {
         "title": "AI 한국어 발음 분석기", "lang_select": "언어 선택", "header": "발음 연습", 
-        "prompt_source": "연습 문장 선택", "source_random": "랜덤 문장", "new_sentence_button": "새로운 랜덤 문장",
+        "prompt_source": "연습 문장 선택", "source_random": "랜덤 문장", "source_gpt": "AI 생성",
+        "new_sentence_button": "새로운 랜덤 문장",
         "start_prompt": "🎤 녹음 시작", "stop_prompt": "⏹️ 녹음 중지", "result_header": "음성 분석 결과", 
         "my_audio": "내 녹음 다시 듣기", "accuracy": "발음 정확도", "compare_header": "상세 비교 분석", 
         "compare_std": "목표 발음", "compare_pred": "내 발음 인식 결과 (AI)", 
@@ -32,7 +33,8 @@ TEXTS = {
     },
     "en": {
         "title": "AI Korean Pronunciation Analyzer", "lang_select": "Select Language", "header": "Pronunciation Practice", 
-        "prompt_source": "Choose a practice sentence", "source_random": "Random Sentence", "new_sentence_button": "New Random Sentence",
+        "prompt_source": "Choose a practice sentence", "source_random": "Random Sentence", "source_gpt": "AI Generated",
+        "new_sentence_button": "New Random Sentence",
         "start_prompt": "▶️ Start Recording", "stop_prompt": "⏹️ Stop Recording", "result_header": "Voice Analysis Result", 
         "my_audio": "Listen to My Recording", "accuracy": "Pronunciation Accuracy", "compare_header": "Detailed Comparison",
         "compare_std": "Target Pronunciation", "compare_pred": "My Pronunciation (AI Recognized)", 
@@ -124,104 +126,80 @@ def render_diff_comparison(std_text: str, pred_text: str, T):
     st.markdown(f'<div style="{style}">{styled_prediction}</div>', unsafe_allow_html=True)
 
 # --- 3. 메인 애플리케이션 실행 ---
+# --- 3. 메인 애플리케이션 실행 ---
 
 # 1. 초기화
 initialize_state()
 client = get_openai_client()
 
-T = TEXTS[st.session_state.lang]
-
 # 2. 사이드바 (언어 선택)
 with st.sidebar:
     st.title("Settings")
-    # 언어가 변경되면, prompt를 초기화하여 새 문장과 오디오를 로드하도록 유도
-    if st.radio("Language", ["ko", "en"], format_func=lambda x: "한국어" if x == "ko" else "English") != st.session_state.lang:
+    # 언어가 변경되면, prompt와 audio를 초기화하고 스크립트를 재실행
+    if st.radio("Language", ["ko", "en"], format_func=lambda x: "한국어" if x == "ko" else "English", key="lang_selector") != st.session_state.lang:
         st.session_state.lang = "en" if st.session_state.lang == "ko" else "ko"
-        st.session_state.prompt = "" # 프롬프트 초기화
-        st.session_state.guide_audio = None # ⭐️ 오디오 상태 초기화
+        st.session_state.prompt = ""
+        st.session_state.guide_audio = None
+        st.rerun()
 
-        st.rerun() # 스크립트 즉시 재실행
+T = TEXTS[st.session_state.lang]
 
 # 3. 메인 페이지 레이아웃
 st.title(T["title"])
 st.header(T["header"])
 
-# 문장 선택 UI
+# 4. 문장 선택 UI
 source_option = st.radio(
-    T["prompt_source"], options=["random", "gpt"],
+    T["prompt_source"],
+    options=["random", "gpt"],
     format_func=lambda x: T["source_random"] if x == "random" else T["source_gpt"],
-    horizontal=True
+    horizontal=True,
+    key="source_option_radio"
 )
 
 if source_option == "random":
-    if st.button(T["new_sentence_button"]):
+    if st.button(T["new_sentence_button"], key="new_random_sentence_button"):
         st.session_state.prompt = random.choice(get_practice_sentences())
         st.session_state.guide_audio = None # 캐시 무효화
         st.rerun()
 else: # GPT
     with st.form(key="gpt_form"):
-        topic = st.text_input(T["gpt_placeholder"], key="gpt_topic")
-        submitted = st.form_submit_button(T["gpt_prompt_button"])
+        topic = st.text_input(TEXTS[st.session_state.lang]["gpt_placeholder"], key="gpt_topic_input")
+        submitted = st.form_submit_button(TEXTS[st.session_state.lang]["gpt_prompt_button"])
         if submitted and topic:
             new_prompt = generate_sentence_with_gpt(client, topic, st.session_state.lang)
             if new_prompt:
                 st.session_state.prompt = new_prompt
-                st.session_state.guide_audio = None # 캐시 무효화
-                st.rerun() # 새 문장을 즉시 반영하기 위해 재실행
+                st.session_state.guide_audio = None
+                st.rerun()
 
-# 4. 연습 문장 선택 및 표시
-if st.button(T["new_sentence_button"]):
-    sentences = get_practice_sentences()
-    st.session_state.prompt = random.choice(sentences)
-    st.session_state.guide_audio = None # ⭐️ 버튼 클릭 시, 오디오 상태를 명시적으로 초기화
-    st.rerun()
-
-# 문장이 비어있으면 초기 문장 설정
+# 5. 현재 연습 문장 및 가이드 오디오 표시
+# 최초 실행 시 또는 문장이 없을 때 초기 문장 설정
 if not st.session_state.prompt:
     st.session_state.prompt = get_practice_sentences()[0]
-    st.session_state.guide_audio = None # ⭐️ 오디오 상태 초기화
+    st.session_state.guide_audio = None # 오디오도 함께 초기화
 
-# note> `@st.cache_data` 로 자동 캐싱이 되지 않음.
-# 가이드 음성 생성 및 표시
-# guide_audio = generate_tts(client, st.session_state.prompt)
-# st.subheader(st.session_state.prompt, divider='rainbow')
-
-# if guide_audio:
-#     st.audio(guide_audio, format="audio/mp3")
-
-
-current_prompt = st.session_state.prompt
-st.subheader(current_prompt, divider='rainbow')
-
-# st.session_state에 저장된 가이드 오디오가 있는지 확인
+# TTS 오디오 생성 및 캐싱 로직
 if st.session_state.guide_audio is None:
-    # 만약 오디오가 없다면, API를 호출하여 생성
-    print(f"DEBUG: Generating new TTS for prompt: '{current_prompt}'") # 디버깅용
-    audio_content = generate_tts(client, current_prompt)
-    if audio_content:
-        # 생성된 오디오를 session_state에 저장
-        st.session_state.guide_audio = audio_content
-        # 화면에 표시
-        st.audio(st.session_state.guide_audio, format="audio/mp3")
-else:
-    # 캐시된 오디오가 있다면, API 호출 없이 바로 표시
-    print(f"DEBUG: Using cached TTS for prompt: '{current_prompt}'") # 디버깅용
+    audio_content = generate_tts(client, st.session_state.prompt)
+    st.session_state.guide_audio = audio_content
+    
+st.subheader(st.session_state.prompt, divider='rainbow')
+if st.session_state.guide_audio:
     st.audio(st.session_state.guide_audio, format="audio/mp3")
 
-
-# 5. 마이크 녹음 및 분석
+# 6. 마이크 녹음 및 분석
 audio_info = mic_recorder(
     start_prompt=T["start_prompt"],
     stop_prompt=T["stop_prompt"],
     just_once=True,
-    key='my_recorder'
+    key='mic_recorder_widget'
 )
 
 if audio_info and audio_info['bytes']:
     st.header(T["result_header"], divider='rainbow')
     
-    # 분석 결과를 표시할 두 개의 컬럼
-    col_listen, col_score = st.columns(2)
+    col_listen, col_score = st.columns([1, 2])
     
     with col_listen:
         st.markdown(f"**{T['my_audio']}**")
