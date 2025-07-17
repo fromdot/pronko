@@ -1,6 +1,6 @@
 [project]
-name = "pronko"
-version = "0.1.0"
+# name = "pronko"
+# version = "0.1.0"
 description = "AI-powered Korean Pronunciation Analyzer"
 requires-python = ">=3.9"
 
