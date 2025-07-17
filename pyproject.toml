@@ -11,7 +11,7 @@ dependencies = [
     "transformers",
     "librosa",
     "soundfile",
-    "g2pk",
+    # "g2pk",
     "python-levenshtein",
     "fastapi",
     "uvicorn[standard]",
